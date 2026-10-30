@@ -1,0 +1,23 @@
+{
+  "name": "obsidian-link-lens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hover previews and status badges for external links, powered by small CLI provider scripts.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && node esbuild.config.mjs",
+    "dev": "node esbuild.config.mjs --watch",
+    "test": "vitest run",
+    "install-vault": "node scripts/install.mjs"
+  },
+  "devDependencies": {
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.13",
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "obsidian": "^1.14.4",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12"
+  }
+}

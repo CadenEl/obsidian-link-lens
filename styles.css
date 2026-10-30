@@ -1,0 +1,180 @@
+.link-lens-popover {
+	max-width: 380px;
+}
+
+.link-lens-content {
+	font-size: var(--font-ui-small);
+}
+
+/* The padding sits on the content's one child, so a preview's clickable card fills the whole box. */
+.link-lens-content > * {
+	padding: var(--size-4-2) var(--size-4-3);
+}
+
+.link-lens-head {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--size-4-2);
+}
+
+.link-lens-heading {
+	flex: 1;
+	min-width: 0;
+	font-weight: var(--font-semibold);
+	line-height: var(--line-height-tight);
+}
+
+.link-lens-title {
+	color: var(--text-normal);
+	text-decoration: none;
+}
+
+.link-lens-title:hover {
+	text-decoration: underline;
+}
+
+.link-lens-line {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-2-2) var(--size-4-2);
+	margin-top: var(--size-2-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* Status with a colored dot, used in the popover. */
+.link-lens-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	white-space: nowrap;
+}
+
+.link-lens-status::before {
+	content: "";
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background-color: var(--link-lens-tone);
+}
+
+/* Clicking anywhere in the card outside the details toggles them; the chevron lights up to show it. */
+.link-lens-toggle {
+	flex: none;
+	margin: calc(-1 * var(--size-2-1)) calc(-1 * var(--size-2-3)) 0 0;
+}
+
+.link-lens-toggle svg {
+	transition:
+		transform var(--anim-duration-fast) ease-in-out,
+		opacity var(--anim-duration-fast) ease-in-out;
+}
+
+.link-lens-toggle[aria-expanded="true"] svg {
+	transform: rotate(180deg);
+}
+
+.link-lens-card.is-collapsible:hover:not(:has(.link-lens-details:hover)) .link-lens-toggle {
+	color: var(--icon-color-hover);
+	background-color: var(--background-modifier-hover);
+}
+
+.link-lens-card.is-collapsible:hover:not(:has(.link-lens-details:hover)) .link-lens-toggle svg {
+	opacity: var(--icon-opacity-hover);
+}
+
+.link-lens-details {
+	margin-top: var(--size-4-2);
+	padding-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.link-lens-fields {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: var(--size-2-1) var(--size-4-3);
+}
+
+.link-lens-label {
+	color: var(--text-muted);
+}
+
+.link-lens-body {
+	color: var(--text-muted);
+	max-height: 200px;
+	overflow-y: auto;
+}
+
+.link-lens-body :is(h1, h2, h3, h4, h5, h6) {
+	font-size: var(--font-ui-small);
+	margin: var(--size-4-2) 0 var(--size-2-1);
+}
+
+.link-lens-body p {
+	margin: 0 0 var(--size-4-2);
+}
+
+.link-lens-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+.link-lens-other {
+	width: 9em;
+}
+
+.link-lens-note {
+	color: var(--text-muted);
+}
+
+.link-lens-note:empty {
+	display: none;
+}
+
+.link-lens-error {
+	color: var(--text-error);
+	white-space: pre-wrap;
+}
+
+/* Status dot after a link in a note. The status is in its tooltip. */
+.link-lens-badge {
+	display: inline-block;
+	width: 0.5em;
+	height: 0.5em;
+	margin-inline-start: 0.3em;
+	border-radius: 50%;
+	vertical-align: 0.1em;
+	background-color: var(--link-lens-tone);
+}
+
+.link-lens-tone-neutral { --link-lens-tone: var(--text-faint); }
+.link-lens-tone-blue { --link-lens-tone: var(--color-blue); }
+.link-lens-tone-green { --link-lens-tone: var(--color-green); }
+.link-lens-tone-yellow { --link-lens-tone: var(--color-yellow); }
+.link-lens-tone-red { --link-lens-tone: var(--color-red); }
+.link-lens-tone-purple { --link-lens-tone: var(--color-purple); }
+
+.link-lens-providers {
+	width: 100%;
+	min-height: 320px;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}
+
+.link-lens-providers-status {
+	margin: var(--size-2-2) 0 var(--size-4-2);
+	color: var(--text-muted);
+}
+
+.link-lens-test-output {
+	max-height: 320px;
+	overflow: auto;
+	white-space: pre-wrap;
+	font-size: var(--font-ui-smaller);
+}

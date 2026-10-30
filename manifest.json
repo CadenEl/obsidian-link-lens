@@ -1,0 +1,9 @@
+{
+  "id": "link-lens",
+  "name": "Link Lens",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Hover previews and status badges for external links, powered by small CLI provider scripts.",
+  "author": "Caden Elrod",
+  "isDesktopOnly": true
+}
