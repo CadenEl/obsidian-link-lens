@@ -1,2 +1,4 @@
 node_modules/
 main.js
+# Written by Obsidian when this folder is symlinked into a test vault.
+data.json
