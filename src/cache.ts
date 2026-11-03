@@ -78,7 +78,7 @@ export class PreviewCache {
 		this.notifyAll();
 	}
 
-	/** Tells every listener that any result may have changed, as clear() does, without dropping them. */
+	/** Tells every listener that any result may have changed, as clear() does, but keeps the results. */
 	notifyAll(): void {
 		for (const listener of this.listeners) listener("");
 	}

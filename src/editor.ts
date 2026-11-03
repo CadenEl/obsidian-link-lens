@@ -22,7 +22,7 @@ export interface BadgeSource {
 /** Rebuilds the badges. The value says whether to start runs for links with nothing fresh cached. */
 const refresh = StateEffect.define<boolean>();
 
-/** How long typing or scrolling must pause before new links load, so a half-typed URL never runs. */
+/** How long typing or scrolling must pause before new links load, so a URL isn't looked up on every keystroke. */
 const SETTLE_MS = 400;
 
 class BadgeWidget extends WidgetType {
@@ -53,9 +53,9 @@ export function badgeExtension(source: BadgeSource) {
 				this.decorations = this.build(true);
 				this.unsubscribe = source.onUpdate((key) => {
 					if (key && !this.keys.has(key)) return;
-					// A result arriving only repaints; loading then would refetch every expired link on
-					// screen each time any one finishes. After clear() everything needs loading again.
-					// Results arrive outside CodeMirror's update cycle, so a dispatch here is safe.
+					// A result only repaints. Loading here would refetch every expired link on screen
+					// each time one finishes. "" comes after clear(), when everything needs loading again.
+					// Results arrive outside CodeMirror's update cycle, so dispatching here is safe.
 					this.view.dispatch({ effects: refresh.of(!key) });
 				});
 			}
