@@ -147,3 +147,7 @@ Provider commands run with your user account's permissions. Settings live in the
 ## Contributing
 
 Bug reports, fixes, and new providers are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, tests, and trying changes in Obsidian.
+
+## License
+
+[MIT](LICENSE)

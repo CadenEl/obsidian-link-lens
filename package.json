@@ -2,6 +2,7 @@
   "name": "obsidian-link-lens",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Hover previews and status badges for external links, powered by small CLI provider scripts.",
   "type": "module",
   "scripts": {
