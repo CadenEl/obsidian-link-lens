@@ -26,9 +26,14 @@ describe("github-gh provider", () => {
 				{ state: "QUEUED", count: 1 },
 				{ state: "FAILURE", count: 1 },
 				{ state: "ERROR", count: 1 },
+				{ state: "TIMED_OUT", count: 1 },
+				{ state: "CANCELLED", count: 1 },
+				{ state: "ACTION_REQUIRED", count: 1 },
+				{ state: "STARTUP_FAILURE", count: 1 },
 				{ state: "EXPECTED", count: 1 },
+				{ state: "STALE", count: 1 },
 			]),
-		).toBe("4 passed, 2 failed, 4 pending, 1 skipped");
+		).toBe("4 passed, 6 failed, 5 pending, 1 skipped");
 		expect(summarizeChecks([])).toBe("");
 	});
 
