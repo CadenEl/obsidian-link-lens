@@ -26,4 +26,11 @@ describe("findLinks", () => {
 	it("handles escaped brackets in link text", () => {
 		expect(findLinks("[a \\] b](https://x.dev/e)").map((l) => l.url)).toEqual(["https://x.dev/e"]);
 	});
+
+	it("skips long lines with no links quickly", () => {
+		// Without the "http" check, this line takes about two seconds to scan.
+		const start = performance.now();
+		expect(findLinks("[".repeat(50_000))).toEqual([]);
+		expect(performance.now() - start).toBeLessThan(50);
+	});
 });

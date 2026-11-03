@@ -11,6 +11,9 @@ const BARE_URL = /https?:\/\/[^\s<>()[\]]*[^\s<>()[\].,;:!?'"]/g;
 
 /** Finds Markdown links and bare URLs in a line of source text. Image links are skipped. */
 export function findLinks(text: string, offset = 0): TextLink[] {
+	// Every link this finds contains "http", so most lines skip the regex scans, which slow
+	// down sharply on long lines full of "[".
+	if (!text.includes("http")) return [];
 	const links: TextLink[] = [];
 	const covered: [number, number][] = [];
 	for (const match of text.matchAll(MARKDOWN_LINK)) {
