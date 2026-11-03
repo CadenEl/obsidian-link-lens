@@ -21,15 +21,14 @@ Both reuse the CLI's existing login, so Link Lens stores no tokens.
 
 ## Install
 
-Link Lens isn't in Obsidian's community plugin list yet. To install it, build it from a clone of this repository with Node.js 22.12 or later (not 23):
+Link Lens isn't in Obsidian's community plugin list yet. Install it in one of two ways:
 
-```sh
-npm install
-npm run build
-npm run install-vault -- /path/to/your/vault
-```
+- With [BRAT](https://github.com/TfTHacker/obsidian42-brat): add the beta plugin `CadenEl/obsidian-link-lens`.
+- By hand: download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/CadenEl/obsidian-link-lens/releases/latest) into `<vault>/.obsidian/plugins/link-lens/`.
 
-`install-vault` copies `main.js`, `manifest.json`, `styles.css`, and the `providers` folder into `<vault>/.obsidian/plugins/link-lens/`. It leaves your saved settings alone, so you can rerun it to update. Then reload Obsidian and turn on **Link Lens** under **Settings → Community plugins**.
+Then reload Obsidian and turn on **Link Lens** under **Settings → Community plugins**. When it loads, Link Lens writes its bundled provider scripts to a `providers` folder next to `main.js`.
+
+To build it from source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Use
 
@@ -105,7 +104,7 @@ A provider prints either JSON or plain text on stdout.
 
 ### Add a provider
 
-1. Write a command that takes values from the URL as arguments and prints the output above. [`providers/jira-acli.mjs`](providers/jira-acli.mjs) and [`providers/github-gh.mjs`](providers/github-gh.mjs) are standalone examples to copy. Each calls one CLI and reshapes its JSON.
+1. Write a command that takes values from the URL as arguments and prints the output above. [`providers/jira-acli.mjs`](providers/jira-acli.mjs) and [`providers/github-gh.mjs`](providers/github-gh.mjs) are standalone examples to copy. Each calls one CLI and reshapes its JSON. Save your copy under a new name, because Link Lens undoes changes to its bundled scripts the next time it loads.
 2. Add an entry to **Providers** in settings with a `pattern` for the URLs and a `command` that runs it.
 3. Paste a URL into **Test a link** to check it.
 

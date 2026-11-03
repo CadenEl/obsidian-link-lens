@@ -22,7 +22,7 @@ npm run build
 npm run install-vault -- /path/to/test-vault
 ```
 
-or symlink this folder to `<test-vault>/.obsidian/plugins/link-lens` and leave `npm run dev` running. Either way, run **Reload app without saving** from the command palette to load the new build. You can set `LINK_LENS_VAULT` instead of passing the vault path each time.
+or symlink this folder to `<test-vault>/.obsidian/plugins/link-lens` and leave `npm run dev` running. A symlinked checkout runs the scripts in `providers/` as they are. Either way, run **Reload app without saving** from the command palette to load the new build. You can set `LINK_LENS_VAULT` instead of passing the vault path each time.
 
 ## Where things live
 
@@ -33,7 +33,7 @@ or symlink this folder to `<test-vault>/.obsidian/plugins/link-lens` and leave `
 - `src/preview.ts`: parsing and checking what a provider prints
 - `src/render.ts` and `styles.css`: the preview and dot UI
 - `src/config.ts` and `src/settingsTab.ts`: settings and their defaults
-- `providers/`: the bundled Jira and GitHub providers, plain Node scripts with no dependencies
+- `providers/`: the bundled Jira and GitHub providers, plain Node scripts with no dependencies. The build copies them into `main.js`, and the plugin writes them to its folder when it loads.
 
 ## Tests
 
@@ -47,3 +47,9 @@ or symlink this folder to `<test-vault>/.obsidian/plugins/link-lens` and leave `
 - Keep a pull request to one change.
 - Match the surrounding code: tabs, small functions, and comments that explain why rather than what.
 - The bundled providers use only Node's standard library, so they run without `npm install`. Keep it that way.
+
+## Releases
+
+1. Run `npm version <version> --no-git-tag-version`, and set the same version in `manifest.json`.
+2. Commit, then tag that commit with the bare version, such as `0.2.0`. Obsidian and BRAT expect the tag to match `manifest.json` exactly, with no `v`.
+3. Push the commit and the tag. The release workflow runs the tests, builds the plugin, and drafts a GitHub release with `main.js`, `manifest.json`, and `styles.css`. Check the draft, then publish it.
