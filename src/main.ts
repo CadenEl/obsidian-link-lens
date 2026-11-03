@@ -2,7 +2,7 @@ import { Component, FileSystemAdapter, HoverPopover, type HoverParent, type Mark
 import { type LoadResult, PreviewCache } from "./cache";
 import { DEFAULT_SETTINGS, type LinkLensSettings, parseSettings } from "./config";
 import { badgeExtension, editorLinkAt } from "./editor";
-import type { Preview } from "./preview";
+import type { Badge, Preview } from "./preview";
 import { type ProviderMatch, ProviderSet, type RunContext, runProvider } from "./providers";
 import { type ActionDraft, createBadge, renderLoading, renderResult } from "./render";
 import { LinkLensSettingTab } from "./settingsTab";
@@ -25,7 +25,7 @@ export default class LinkLensPlugin extends Plugin {
 		this.registerEditorExtension(
 			badgeExtension({
 				enabled: () => this.settings.showBadges,
-				lookup: (url) => this.lookup(url),
+				lookup: (url, load) => this.lookup(url, load),
 				onUpdate: (listener) => this.cache.onUpdate(listener),
 			}),
 		);
@@ -34,8 +34,10 @@ export default class LinkLensPlugin extends Plugin {
 		this.registerEvent(this.app.workspace.on("window-open", (win) => this.watchHover(win.doc)));
 	}
 
-	async saveSettings(): Promise<void> {
+	/** Saves settings. Pass `invalidate` for changes that alter what providers return, which drops every cached result. */
+	async saveSettings(invalidate = false): Promise<void> {
 		await this.saveData(this.settings);
+		if (!invalidate) return;
 		this.providers = new ProviderSet(this.settings.providers);
 		this.cache.clear();
 	}
@@ -51,30 +53,32 @@ export default class LinkLensPlugin extends Plugin {
 
 	/** Runs a provider action, then caches the refreshed preview so badges update too. */
 	private async runAction(match: ProviderMatch, choice: string): Promise<LoadResult> {
-		if (this.acting.has(match.url)) return { ok: false, error: "A change to this item is already running." };
-		this.acting.add(match.url);
+		if (this.acting.has(match.key)) return { ok: false, error: "A change to this item is already running." };
+		this.acting.add(match.key);
 		try {
 			const result: LoadResult = { ok: true, preview: await runProvider(match, this.runContext(), ["--action", choice]) };
-			this.cache.set(match.url, result);
+			this.cache.set(match.key, result);
 			return result;
 		} catch (error) {
 			return { ok: false, error: error instanceof Error ? error.message : String(error) };
 		} finally {
-			this.acting.delete(match.url);
+			this.acting.delete(match.key);
 		}
 	}
 
 	private loadPreview(match: ProviderMatch): Promise<LoadResult> {
-		return this.cache.get(match.url, () => this.run(match));
+		return this.cache.get(match.key, () => this.run(match));
 	}
 
-	lookup(url: string): LoadResult | "loading" | null {
+	/**
+	 * Returns the cache key for a URL a provider handles and its newest result, even an expired
+	 * one, so a badge keeps showing while it reloads. With `load`, a stale or missing result starts a run.
+	 */
+	lookup(url: string, load: boolean): { key: string; result: LoadResult | undefined } | null {
 		const match = this.match(url);
 		if (!match) return null;
-		const cached = this.cache.peek(url);
-		if (cached) return cached;
-		void this.loadPreview(match);
-		return "loading";
+		if (load && !this.cache.peek(match.key)) void this.loadPreview(match);
+		return { key: match.key, result: this.cache.last(match.key) };
 	}
 
 	private runContext(): RunContext {
@@ -155,18 +159,18 @@ export default class LinkLensPlugin extends Plugin {
 				draft.choice = "";
 				draft.other = "";
 			} else draft.error = result.error;
-			render(this.cache.peek(match.url) ?? rendered ?? result);
+			render(this.cache.peek(match.key) ?? rendered ?? result);
 		};
 		// Follows the cache once the popover is on screen, so an action elsewhere or a newer
 		// lookup replaces what it shows. A child component loads and unloads with the popover,
 		// and a popover cancelled before it appears never loads, so it never subscribes.
 		popover.addChild(
-			new CacheFollower(this.cache, match.url, () => {
-				const next = this.cache.peek(match.url);
+			new CacheFollower(this.cache, match.key, () => {
+				const next = this.cache.peek(match.key);
 				if (next && next !== rendered && !draft.busy) render(next);
 			}),
 		);
-		const cached = this.cache.peek(match.url);
+		const cached = this.cache.peek(match.key);
 		if (cached) {
 			render(cached);
 			return;
@@ -191,11 +195,13 @@ function lineChild(target: HTMLElement): HTMLElement | null {
 }
 
 /**
- * Badges for one rendered Reading-view section. Re-renders when a result for
- * one of its links arrives or the cache is cleared after a settings change.
+ * Badges for one rendered Reading-view section. Loads its links when it renders and
+ * after a settings change, and repaints when a result for one of its links arrives.
  */
 class ReadingBadges extends MarkdownRenderChild {
-	private urls = new Set<string>();
+	private keys = new Set<string>();
+	/** The badge after each anchor, so a repaint only touches links whose status changed. */
+	private readonly shown = new Map<Element, { el: HTMLElement; badge: Badge }>();
 
 	constructor(
 		containerEl: HTMLElement,
@@ -205,37 +211,40 @@ class ReadingBadges extends MarkdownRenderChild {
 	}
 
 	onload(): void {
-		this.render();
+		this.render(true);
 		this.register(
-			this.plugin.cache.onUpdate((url) => {
-				if (!url || this.urls.has(url)) this.render();
+			this.plugin.cache.onUpdate((key) => {
+				if (!key) this.render(true);
+				else if (this.keys.has(key)) this.render(false);
 			}),
 		);
 	}
 
-	private render(): void {
-		for (const badge of Array.from(this.containerEl.querySelectorAll(".link-lens-reading-badge"))) badge.remove();
-		this.urls = new Set();
-		if (!this.plugin.settings.showBadges) return;
+	private render(load: boolean): void {
+		this.keys = new Set();
+		const enabled = this.plugin.settings.showBadges;
 		for (const anchor of Array.from(this.containerEl.querySelectorAll("a.external-link"))) {
 			const url = anchor.getAttribute("href");
-			const result = url ? this.plugin.lookup(url) : null;
-			if (!url || !result) continue;
-			this.urls.add(url);
-			if (result !== "loading" && result.ok && result.preview.badge) {
-				const badge = createBadge(result.preview.badge);
-				badge.addClass("link-lens-reading-badge");
-				anchor.after(badge);
-			}
+			const found = enabled && url ? this.plugin.lookup(url, load) : null;
+			if (found) this.keys.add(found.key);
+			const badge = found?.result?.ok ? found.result.preview.badge : undefined;
+			const shown = this.shown.get(anchor);
+			if (shown && badge && shown.badge.text === badge.text && shown.badge.tone === badge.tone) continue;
+			shown?.el.remove();
+			this.shown.delete(anchor);
+			if (!badge) continue;
+			const el = createBadge(badge);
+			anchor.after(el);
+			this.shown.set(anchor, { el, badge });
 		}
 	}
 }
 
-/** Calls `refresh` while loaded: once on load, then whenever the cached result for `url` changes. */
+/** Calls `refresh` while loaded: once on load, then whenever the cached result for `key` changes. */
 class CacheFollower extends Component {
 	constructor(
 		private readonly cache: PreviewCache,
-		private readonly url: string,
+		private readonly key: string,
 		private readonly refresh: () => void,
 	) {
 		super();
@@ -244,8 +253,8 @@ class CacheFollower extends Component {
 	onload(): void {
 		this.refresh();
 		this.register(
-			this.cache.onUpdate((url) => {
-				if (url === this.url) this.refresh();
+			this.cache.onUpdate((key) => {
+				if (key === this.key) this.refresh();
 			}),
 		);
 	}

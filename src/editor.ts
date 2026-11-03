@@ -11,12 +11,19 @@ import { createBadge } from "./render";
 /** What the editor extension needs from the plugin. */
 export interface BadgeSource {
 	enabled(): boolean;
-	/** Returns the cached result for a URL a provider handles, starting a load when nothing is cached. */
-	lookup(url: string): LoadResult | "loading" | null;
-	onUpdate(listener: (url: string) => void): () => void;
+	/**
+	 * Returns the cache key for a URL a provider handles and its newest result, even an expired one.
+	 * With `load`, also starts a run when nothing fresh is cached.
+	 */
+	lookup(url: string, load: boolean): { key: string; result: LoadResult | undefined } | null;
+	onUpdate(listener: (key: string) => void): () => void;
 }
 
-const refresh = StateEffect.define<null>();
+/** Rebuilds the badges. The value says whether to start runs for links with nothing fresh cached. */
+const refresh = StateEffect.define<boolean>();
+
+/** How long typing or scrolling must pause before new links load, so a half-typed URL never runs. */
+const SETTLE_MS = 400;
 
 class BadgeWidget extends WidgetType {
 	constructor(private readonly badge: Badge) {
@@ -37,31 +44,47 @@ export function badgeExtension(source: BadgeSource) {
 	return ViewPlugin.fromClass(
 		class {
 			decorations: DecorationSet;
-			/** Link URLs in the current viewport, loaded or loading. */
-			private urls = new Set<string>();
+			/** Cache keys of provider links in the current viewport. */
+			private keys = new Set<string>();
 			private readonly unsubscribe: () => void;
+			private settleTimer: ReturnType<typeof setTimeout> | undefined;
 
 			constructor(readonly view: EditorView) {
-				this.decorations = this.build();
-				this.unsubscribe = source.onUpdate((url) => {
-					if (url && !this.urls.has(url)) return;
+				this.decorations = this.build(true);
+				this.unsubscribe = source.onUpdate((key) => {
+					if (key && !this.keys.has(key)) return;
+					// A result arriving only repaints; loading then would refetch every expired link on
+					// screen each time any one finishes. After clear() everything needs loading again.
 					// Results arrive outside CodeMirror's update cycle, so a dispatch here is safe.
-					this.view.dispatch({ effects: refresh.of(null) });
+					this.view.dispatch({ effects: refresh.of(!key) });
 				});
 			}
 
 			update(update: ViewUpdate) {
-				const refreshed = update.transactions.some((tr) => tr.effects.some((effect) => effect.is(refresh)));
-				const modeChanged = update.startState.field(editorLivePreviewField) !== update.state.field(editorLivePreviewField);
-				if (update.docChanged || update.viewportChanged || refreshed || modeChanged) this.decorations = this.build();
+				let load = update.startState.field(editorLivePreviewField) !== update.state.field(editorLivePreviewField);
+				let rebuild = load;
+				for (const tr of update.transactions) {
+					for (const effect of tr.effects) {
+						if (!effect.is(refresh)) continue;
+						rebuild = true;
+						load ||= effect.value;
+					}
+				}
+				if (update.docChanged || update.viewportChanged) {
+					rebuild = true;
+					clearTimeout(this.settleTimer);
+					this.settleTimer = setTimeout(() => this.view.dispatch({ effects: refresh.of(true) }), SETTLE_MS);
+				}
+				if (rebuild) this.decorations = this.build(load);
 			}
 
 			destroy() {
+				clearTimeout(this.settleTimer);
 				this.unsubscribe();
 			}
 
-			private build(): DecorationSet {
-				this.urls = new Set();
+			private build(load: boolean): DecorationSet {
+				this.keys = new Set();
 				const { state } = this.view;
 				if (!source.enabled() || !state.field(editorLivePreviewField)) return Decoration.none;
 				const widgets: Range<Decoration>[] = [];
@@ -75,11 +98,11 @@ export function badgeExtension(source: BadgeSource) {
 						lastLine = line.number;
 						for (const link of findLinks(line.text, line.from)) {
 							if (inCode(state, link.from)) continue;
-							const result = source.lookup(link.url);
-							if (result) this.urls.add(link.url);
-							if (result && result !== "loading" && result.ok && result.preview.badge) {
-								widgets.push(Decoration.widget({ widget: new BadgeWidget(result.preview.badge), side: 1 }).range(link.to));
-							}
+							const found = source.lookup(link.url, load);
+							if (!found) continue;
+							this.keys.add(found.key);
+							const badge = found.result?.ok ? found.result.preview.badge : undefined;
+							if (badge) widgets.push(Decoration.widget({ widget: new BadgeWidget(badge), side: 1 }).range(link.to));
 						}
 					}
 				}

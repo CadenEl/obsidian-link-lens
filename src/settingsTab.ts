@@ -1,4 +1,4 @@
-import { type App, PluginSettingTab, Setting } from "obsidian";
+import { type App, debounce, PluginSettingTab, Setting } from "obsidian";
 import { DEFAULT_PROVIDERS, parseProviders } from "./config";
 import type LinkLensPlugin from "./main";
 
@@ -22,6 +22,7 @@ export class LinkLensSettingTab extends PluginSettingTab {
 				toggle.setValue(settings.showBadges).onChange(async (value) => {
 					settings.showBadges = value;
 					await this.plugin.saveSettings();
+					this.plugin.cache.notifyAll();
 				}),
 			);
 
@@ -50,13 +51,15 @@ export class LinkLensSettingTab extends PluginSettingTab {
 			)
 			.addButton((button) => button.setButtonText("Clear cache").onClick(() => this.plugin.cache.clear()));
 
+		// Waits for typing to pause, so each keystroke doesn't drop the cache and rerun every visible link.
+		const savePath = debounce(() => void this.plugin.saveSettings(true), 500, true);
 		new Setting(containerEl)
 			.setName("PATH additions")
 			.setDesc("Folders searched for provider programs before the app's PATH. Separate them with : on macOS and Linux, or ; on Windows.")
 			.addText((text) =>
-				text.setValue(settings.extraPath).onChange(async (value) => {
+				text.setValue(settings.extraPath).onChange((value) => {
 					settings.extraPath = value.trim();
-					await this.plugin.saveSettings();
+					savePath();
 				}),
 			);
 
@@ -77,14 +80,14 @@ export class LinkLensSettingTab extends PluginSettingTab {
 				status.addClass("link-lens-error");
 				return;
 			}
-			await this.plugin.saveSettings();
+			await this.plugin.saveSettings(true);
 			status.setText("Saved.");
 			status.removeClass("link-lens-error");
 		});
 		new Setting(containerEl).addButton((button) =>
 			button.setButtonText("Restore default providers").onClick(async () => {
 				settings.providers = structuredClone(DEFAULT_PROVIDERS);
-				await this.plugin.saveSettings();
+				await this.plugin.saveSettings(true);
 				this.display();
 			}),
 		);
@@ -103,10 +106,13 @@ export class LinkLensSettingTab extends PluginSettingTab {
 						return;
 					}
 					output.setText(`Running ${match.provider.name}…`);
+					button.setDisabled(true);
 					try {
 						output.setText(JSON.stringify({ provider: match.provider.id, groups: match.groups, preview: await this.plugin.run(match) }, null, 2));
 					} catch (error) {
 						output.setText(`Error: ${(error as Error).message}`);
+					} finally {
+						button.setDisabled(false);
 					}
 				}),
 			);

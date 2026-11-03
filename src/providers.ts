@@ -7,6 +7,8 @@ export interface ProviderMatch {
 	provider: ProviderConfig;
 	url: string;
 	groups: Record<string, string>;
+	/** Cache key for the run. Links whose commands fill in identically share it. */
+	key: string;
 }
 
 export interface RunContext {
@@ -29,9 +31,23 @@ export class ProviderSet {
 			if (!found) continue;
 			const groups: Record<string, string> = {};
 			for (const [name, value] of Object.entries(found.groups ?? {})) groups[name] = value ?? "";
-			return { provider, url, groups };
+			return { provider, url, groups, key: runKey(provider, url, groups) };
 		}
 		return null;
+	}
+}
+
+/**
+ * Identifies a run by its filled-in command, so links that differ only in parts the command
+ * ignores, such as a pull request URL with "/files" or "#issuecomment-1", share one run.
+ * The plugin and vault folders are the same for every run, so they're left blank.
+ */
+function runKey(provider: ProviderConfig, url: string, groups: Record<string, string>): string {
+	try {
+		return JSON.stringify([provider.id, ...buildArgs(provider.command, { ...groups, url, pluginDir: "", vaultDir: "" })]);
+	} catch {
+		// An unknown placeholder fails every run of this provider, so the URL is as good a key as any.
+		return JSON.stringify([provider.id, url]);
 	}
 }
 

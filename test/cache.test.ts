@@ -35,6 +35,63 @@ describe("PreviewCache", () => {
 		expect(cache.peek("ok")).toBeUndefined();
 	});
 
+	it("keeps the last result after it expires until a reload replaces it", async () => {
+		let now = 0;
+		const cache = new PreviewCache(() => 1000, 4, () => now);
+		await cache.get("u", async () => preview("old"));
+		now = 2000;
+		expect(cache.peek("u")).toBeUndefined();
+		expect(cache.last("u")).toEqual({ ok: true, preview: preview("old") });
+		const gate = deferred<void>();
+		const reload = cache.get("u", async () => (await gate.promise, preview("new")));
+		expect(cache.last("u")).toEqual({ ok: true, preview: preview("old") });
+		gate.resolve();
+		await reload;
+		expect(cache.last("u")).toEqual({ ok: true, preview: preview("new") });
+	});
+
+	it("skips a queued run that clear() superseded and hands its waiters the replacement", async () => {
+		const cache = new PreviewCache(() => 1000, 1);
+		const gate = deferred<void>();
+		const blocker = cache.get("a", async () => (await gate.promise, preview("a")));
+		let staleRuns = 0;
+		const stale = cache.get("b", async () => (staleRuns++, preview("stale")));
+		cache.clear();
+		const fresh = cache.get("b", async () => preview("fresh"));
+		gate.resolve();
+		await blocker;
+		await expect(stale).resolves.toEqual({ ok: true, preview: preview("fresh") });
+		await expect(fresh).resolves.toEqual({ ok: true, preview: preview("fresh") });
+		expect(staleRuns).toBe(0);
+	});
+
+	it("skips a queued run that set() replaced", async () => {
+		const cache = new PreviewCache(() => 1000, 1);
+		const gate = deferred<void>();
+		const blocker = cache.get("a", async () => (await gate.promise, preview("a")));
+		let runs = 0;
+		const queued = cache.get("b", async () => (runs++, preview("Open")));
+		cache.set("b", { ok: true, preview: preview("Merged") });
+		gate.resolve();
+		await blocker;
+		await expect(queued).resolves.toEqual({ ok: true, preview: preview("Merged") });
+		expect(runs).toBe(0);
+		// The skipped run gave its slot back.
+		await expect(cache.get("c", async () => preview("c"))).resolves.toEqual({ ok: true, preview: preview("c") });
+	});
+
+	it("still runs a superseded queued request when nothing replaced it", async () => {
+		const cache = new PreviewCache(() => 1000, 1);
+		const gate = deferred<void>();
+		const blocker = cache.get("a", async () => (await gate.promise, preview("a")));
+		const queued = cache.get("b", async () => preview("b"));
+		cache.clear();
+		gate.resolve();
+		await blocker;
+		await expect(queued).resolves.toEqual({ ok: true, preview: preview("b") });
+		expect(cache.peek("b")).toEqual({ ok: true, preview: preview("b") });
+	});
+
 	it("never runs more than the limit at once", async () => {
 		const cache = new PreviewCache(() => 1000, 2);
 		let active = 0;

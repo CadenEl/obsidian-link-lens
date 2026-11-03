@@ -11,8 +11,8 @@ interface Entry {
 const ERROR_TTL_MS = 60_000;
 
 /**
- * Caches provider results by URL, shares one run between concurrent requests
- * for the same URL, and caps how many provider processes run at once.
+ * Caches provider results by key, shares one run between concurrent requests
+ * for the same key, and caps how many provider processes run at once.
  */
 export class PreviewCache {
 	private readonly entries = new Map<string, Entry>();
@@ -32,11 +32,12 @@ export class PreviewCache {
 		const entry = this.entries.get(key);
 		if (!entry) return undefined;
 		const ttl = entry.result.ok ? this.ttlMs() : Math.min(ERROR_TTL_MS, this.ttlMs());
-		if (this.now() - entry.at > ttl) {
-			this.entries.delete(key);
-			return undefined;
-		}
-		return entry.result;
+		return this.now() - entry.at > ttl ? undefined : entry.result;
+	}
+
+	/** Returns the newest result even after it expires, so a badge keeps showing until a reload replaces it. */
+	last(key: string): LoadResult | undefined {
+		return this.entries.get(key)?.result;
 	}
 
 	get(key: string, load: () => Promise<Preview>): Promise<LoadResult> {
@@ -44,12 +45,14 @@ export class PreviewCache {
 		if (cached) return Promise.resolve(cached);
 		const running = this.inflight.get(key);
 		if (running) return running;
-		const promise: Promise<LoadResult> = this.limit(load)
+		const promise: Promise<LoadResult> = this.limit(load, () => this.inflight.get(key) === promise)
 			.then(
-				(preview): LoadResult => ({ ok: true, preview }),
+				(preview): LoadResult | undefined => (preview ? { ok: true, preview } : undefined),
 				(error: unknown): LoadResult => ({ ok: false, error: error instanceof Error ? error.message : String(error) }),
 			)
 			.then((result) => {
+				// Skipped because clear() or set() superseded it while it waited for a slot.
+				if (!result) return this.get(key, load);
 				if (this.inflight.get(key) === promise) {
 					this.inflight.delete(key);
 					this.store(key, result);
@@ -72,10 +75,15 @@ export class PreviewCache {
 	clear(): void {
 		this.entries.clear();
 		this.inflight.clear();
+		this.notifyAll();
+	}
+
+	/** Tells every listener that any result may have changed, as clear() does, without dropping them. */
+	notifyAll(): void {
 		for (const listener of this.listeners) listener("");
 	}
 
-	/** Calls the listener with a URL when its result arrives, or with "" after clear(). */
+	/** Calls the listener with a key when its result arrives, or with "" after clear() or notifyAll(). */
 	onUpdate(listener: (key: string) => void): () => void {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
@@ -86,16 +94,28 @@ export class PreviewCache {
 		for (const listener of this.listeners) listener(key);
 	}
 
-	private async limit<T>(task: () => Promise<T>): Promise<T> {
-		// A finished task hands its slot straight to the next waiter, so the count never overshoots.
-		if (this.active >= this.maxConcurrent) await new Promise<void>((resolve) => this.waiting.push(resolve));
-		else this.active++;
+	/** Runs `task` once a slot is free. Returns undefined without running it if it's no longer `wanted` by then. */
+	private async limit<T>(task: () => Promise<T>, wanted: () => boolean): Promise<T | undefined> {
+		// A task that gets a slot right away can't have been superseded yet.
+		if (this.active < this.maxConcurrent) this.active++;
+		else {
+			// A finished task hands its slot straight to the next waiter, so the count never overshoots.
+			await new Promise<void>((resolve) => this.waiting.push(resolve));
+			if (!wanted()) {
+				this.release();
+				return undefined;
+			}
+		}
 		try {
 			return await task();
 		} finally {
-			const next = this.waiting.shift();
-			if (next) next();
-			else this.active--;
+			this.release();
 		}
+	}
+
+	private release(): void {
+		const next = this.waiting.shift();
+		if (next) next();
+		else this.active--;
 	}
 }

@@ -36,6 +36,21 @@ describe("ProviderSet", () => {
 		expect(set.match("https://github.com/o/r/blob/main/x.ts")).toBeNull();
 		expect(set.match("https://example.atlassian.net/wiki/spaces/DOCS/pages/1")).toBeNull();
 	});
+
+	it("gives links with identical commands one key", () => {
+		const set = new ProviderSet(DEFAULT_PROVIDERS);
+		const key = (url: string) => set.match(url)?.key;
+		const pr = key("https://github.com/o/r/pull/42");
+		expect(key("https://github.com/o/r/pull/42/files")).toBe(pr);
+		expect(key("https://github.com/o/r/pull/42#issuecomment-1")).toBe(pr);
+		expect(key("https://github.com/o/r/pull/43")).not.toBe(pr);
+		expect(key("https://github.com/o/r/issues/42")).not.toBe(pr);
+	});
+
+	it("keeps URL variants apart when the command uses {url}", () => {
+		const set = new ProviderSet([provider({ pattern: "^https://example\\.com/(?<id>\\d+)", command: ["echo", "{url}"] })]);
+		expect(set.match("https://example.com/1#a")?.key).not.toBe(set.match("https://example.com/1#b")?.key);
+	});
 });
 
 describe("buildArgs", () => {
