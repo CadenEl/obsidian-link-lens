@@ -16,16 +16,19 @@ describe("github-gh provider", () => {
 		},
 	);
 
-	it("summarizes check runs and status contexts", () => {
+	it("summarizes check run and status context counts", () => {
 		expect(
 			summarizeChecks([
-				{ __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS" },
-				{ __typename: "CheckRun", status: "COMPLETED", conclusion: "SKIPPED" },
-				{ __typename: "CheckRun", status: "IN_PROGRESS", conclusion: "" },
-				{ __typename: "CheckRun", status: "COMPLETED", conclusion: "FAILURE" },
-				{ __typename: "StatusContext", state: "SUCCESS" },
+				{ state: "SUCCESS", count: 3 },
+				{ state: "NEUTRAL", count: 1 },
+				{ state: "SKIPPED", count: 1 },
+				{ state: "IN_PROGRESS", count: 2 },
+				{ state: "QUEUED", count: 1 },
+				{ state: "FAILURE", count: 1 },
+				{ state: "ERROR", count: 1 },
+				{ state: "EXPECTED", count: 1 },
 			]),
-		).toBe("2 passed, 1 failed, 1 pending, 1 skipped");
+		).toBe("4 passed, 2 failed, 4 pending, 1 skipped");
 		expect(summarizeChecks([])).toBe("");
 	});
 
@@ -35,7 +38,8 @@ describe("github-gh provider", () => {
 
 	it("builds pull request and issue previews", () => {
 		const args = { owner: "example-org", repo: "widgets", number: "42" };
-		const pr = { title: "Add CSV export", state: "MERGED", isDraft: false, reviewDecision: "APPROVED", author: { login: "example-user" }, baseRefName: "main", headRefName: "feature/csv-export", statusCheckRollup: [], additions: 10, deletions: 2, updatedAt: "2026-01-15T09:30:00Z", body: "" };
+		const contexts = { checkRunCountsByState: [{ state: "SUCCESS", count: 2 }], statusContextCountsByState: [{ state: "FAILURE", count: 1 }] };
+		const pr = { title: "Add CSV export", state: "MERGED", isDraft: false, reviewDecision: "APPROVED", author: { login: "example-user" }, baseRefName: "main", headRefName: "feature/csv-export", commits: { nodes: [{ commit: { statusCheckRollup: { contexts } } }] }, additions: 10, deletions: 2, updatedAt: "2026-01-15T09:30:00Z", body: "" };
 		expect(prPreview(args, pr)).toEqual({
 			title: "Add CSV export",
 			subtitle: "example-org/widgets#42 · Pull request",
@@ -44,11 +48,15 @@ describe("github-gh provider", () => {
 				{ label: "Author", value: "example-user" },
 				{ label: "Branch", value: "feature/csv-export → main" },
 				{ label: "Review", value: "Approved" },
+				{ label: "Checks", value: "2 passed, 1 failed" },
 				{ label: "Changes", value: "+10 −2" },
 				{ label: "Updated", value: "2026-01-15" },
 			],
 			body: undefined,
 		});
+		// A commit with no checks has a null rollup.
+		const unchecked = { ...pr, commits: { nodes: [{ commit: { statusCheckRollup: null } }] } };
+		expect(prPreview(args, unchecked).fields.map((field) => field.label)).not.toContain("Checks");
 		expect(prPreview(args, { ...pr, isDraft: true, state: "OPEN" }).badge).toEqual({ text: "Draft", tone: "neutral" });
 		expect(prPreview(args, { ...pr, isDraft: true, state: "CLOSED" }).badge).toEqual({ text: "Closed", tone: "red" });
 		expect(prPreview(args, { ...pr, isDraft: false, state: "OPEN" }).badge).toEqual({ text: "Open", tone: "green" });

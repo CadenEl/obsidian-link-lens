@@ -10,7 +10,19 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const BODY_LIMIT = 600;
-const PR_FIELDS = "title,state,isDraft,reviewDecision,author,baseRefName,headRefName,statusCheckRollup,updatedAt,additions,deletions,body";
+// Asks for check counts by state rather than every check's record, which on a PR with many
+// checks is most of the response. This is the shape gh itself uses for check counts.
+const PR_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      title state isDraft reviewDecision author { login } baseRefName headRefName updatedAt additions deletions body
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts {
+        checkRunCountsByState { state count }
+        statusContextCountsByState { state count }
+      } } } } }
+    }
+  }
+}`;
 const ISSUE_FIELDS = "title,state,stateReason,author,assignees,labels,updatedAt,body";
 const REVIEW = { APPROVED: "Approved", CHANGES_REQUESTED: "Changes requested", REVIEW_REQUIRED: "Review required" };
 const PASSED = new Set(["SUCCESS", "NEUTRAL"]);
@@ -36,15 +48,17 @@ export function parseArgs(argv) {
 	return { owner, repo, kind, number, login: accounts.get(owner.toLowerCase()) ?? defaultAccount };
 }
 
-/** Summarizes check runs and commit statuses, such as "5 passed, 1 skipped". */
-export function summarizeChecks(rollup = []) {
+/**
+ * Summarizes check run and commit status counts by state, such as "5 passed, 1 skipped".
+ * Unfinished states, such as QUEUED or IN_PROGRESS, count as pending.
+ */
+export function summarizeChecks(stateCounts = []) {
 	const counts = { passed: 0, failed: 0, pending: 0, skipped: 0 };
-	for (const check of rollup) {
-		const outcome = check.__typename === "StatusContext" ? check.state : check.status === "COMPLETED" ? check.conclusion : "PENDING";
-		if (PASSED.has(outcome)) counts.passed++;
-		else if (FAILED.has(outcome)) counts.failed++;
-		else if (outcome === "SKIPPED") counts.skipped++;
-		else counts.pending++;
+	for (const { state, count } of stateCounts) {
+		if (PASSED.has(state)) counts.passed += count;
+		else if (FAILED.has(state)) counts.failed += count;
+		else if (state === "SKIPPED") counts.skipped += count;
+		else counts.pending += count;
 	}
 	return Object.entries(counts)
 		.filter(([, n]) => n > 0)
@@ -87,7 +101,8 @@ export function prPreview({ owner, repo, number }, pr) {
 		{ label: "Branch", value: `${pr.headRefName} → ${pr.baseRefName}` },
 	];
 	if (REVIEW[pr.reviewDecision]) fields.push({ label: "Review", value: REVIEW[pr.reviewDecision] });
-	const checks = summarizeChecks(pr.statusCheckRollup);
+	const contexts = pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts;
+	const checks = summarizeChecks([...(contexts?.checkRunCountsByState ?? []), ...(contexts?.statusContextCountsByState ?? [])]);
 	if (checks) fields.push({ label: "Checks", value: checks });
 	fields.push({ label: "Changes", value: `+${pr.additions} −${pr.deletions}` });
 	if (pr.updatedAt) fields.push({ label: "Updated", value: pr.updatedAt.slice(0, 10) });
@@ -110,12 +125,18 @@ async function main() {
 	const args = parseArgs(process.argv.slice(2));
 	const env = { ...process.env };
 	if (args.login) env.GH_TOKEN = (await run("gh", ["auth", "token", "--user", args.login])).stdout.trim();
-	const repo = `${args.owner}/${args.repo}`;
-	const isPull = args.kind === "pull";
-	const command = isPull ? ["pr", "view", args.number, "-R", repo, "--json", PR_FIELDS] : ["issue", "view", args.number, "-R", repo, "--json", ISSUE_FIELDS];
-	const { stdout } = await run("gh", command, { env, maxBuffer: 8 * 1024 * 1024 });
-	const data = JSON.parse(stdout);
-	process.stdout.write(JSON.stringify(isPull ? prPreview(args, data) : issuePreview(args, data)));
+	const options = { env, maxBuffer: 8 * 1024 * 1024 };
+	if (args.kind === "issues") {
+		const { stdout } = await run("gh", ["issue", "view", args.number, "-R", `${args.owner}/${args.repo}`, "--json", ISSUE_FIELDS], options);
+		process.stdout.write(JSON.stringify(issuePreview(args, JSON.parse(stdout))));
+		return;
+	}
+	// -f passes owner and repo as strings even when they look like numbers; -F makes number an Int.
+	const query = ["api", "graphql", "-f", `query=${PR_QUERY}`, "-f", `owner=${args.owner}`, "-f", `repo=${args.repo}`, "-F", `number=${args.number}`];
+	const { stdout } = await run("gh", query, options);
+	const pr = JSON.parse(stdout).data?.repository?.pullRequest;
+	if (!pr) throw new Error(`Could not find pull request ${args.owner}/${args.repo}#${args.number}.`);
+	process.stdout.write(JSON.stringify(prPreview(args, pr)));
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
