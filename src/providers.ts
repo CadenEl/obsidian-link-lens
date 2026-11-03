@@ -1,5 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { delimiter } from "node:path";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { delimiter, join } from "node:path";
 import type { ProviderConfig } from "./config";
 import { parsePreview, type Preview } from "./preview";
 
@@ -57,6 +59,25 @@ export function buildArgs(command: string[], values: Record<string, string>): st
 		arg.replace(/\{(\w+)\}/g, (_token, name: string) => {
 			if (!Object.hasOwn(values, name)) throw new Error(`Unknown placeholder {${name}} in the command.`);
 			return values[name];
+		}),
+	);
+}
+
+/**
+ * Writes the bundled provider scripts to `{pluginDir}/providers/`, since Obsidian installs only
+ * main.js, manifest.json, and styles.css. Scripts that already match are left alone, so file sync
+ * sees no change on every load. A source checkout linked into a test vault is skipped: it runs its
+ * own providers/ files, and its main.js may predate an edit to them.
+ */
+export async function writeProviderScripts(pluginDir: string, scripts: Record<string, string>): Promise<void> {
+	if (existsSync(join(pluginDir, "package.json"))) return;
+	const dir = join(pluginDir, "providers");
+	await mkdir(dir, { recursive: true });
+	await Promise.all(
+		Object.entries(scripts).map(async ([name, text]) => {
+			const path = join(dir, name);
+			const current = await readFile(path, "utf8").catch(() => undefined);
+			if (current !== text) await writeFile(path, text);
 		}),
 	);
 }

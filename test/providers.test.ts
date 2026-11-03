@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PROVIDERS, type ProviderConfig } from "../src/config";
-import { buildArgs, ProviderSet, runProvider } from "../src/providers";
+import { buildArgs, ProviderSet, runProvider, writeProviderScripts } from "../src/providers";
 
 const provider = (overrides: Partial<ProviderConfig>): ProviderConfig => ({
 	id: "p",
@@ -153,3 +153,36 @@ function isAlive(pid: number): boolean {
 		return false;
 	}
 }
+
+describe("writeProviderScripts", () => {
+	const withDir = async (test: (dir: string) => Promise<void>) => {
+		const dir = mkdtempSync(join(tmpdir(), "link-lens-"));
+		try {
+			await test(dir);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	};
+
+	it("writes missing and changed scripts and leaves matching ones alone", () =>
+		withDir(async (dir) => {
+			const providers = join(dir, "providers");
+			mkdirSync(providers);
+			writeFileSync(join(providers, "same.mjs"), "same");
+			utimesSync(join(providers, "same.mjs"), 1, 1);
+			writeFileSync(join(providers, "old.mjs"), "old");
+			writeFileSync(join(providers, "mine.mjs"), "mine");
+			await writeProviderScripts(dir, { "same.mjs": "same", "old.mjs": "new", "added.mjs": "added" });
+			expect(statSync(join(providers, "same.mjs")).mtimeMs).toBe(1000);
+			expect(readFileSync(join(providers, "old.mjs"), "utf8")).toBe("new");
+			expect(readFileSync(join(providers, "added.mjs"), "utf8")).toBe("added");
+			expect(readFileSync(join(providers, "mine.mjs"), "utf8")).toBe("mine");
+		}));
+
+	it("leaves a source checkout alone", () =>
+		withDir(async (dir) => {
+			writeFileSync(join(dir, "package.json"), "{}");
+			await writeProviderScripts(dir, { "a.mjs": "a" });
+			expect(existsSync(join(dir, "providers"))).toBe(false);
+		}));
+});

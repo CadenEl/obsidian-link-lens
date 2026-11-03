@@ -3,9 +3,12 @@ import { type LoadResult, PreviewCache } from "./cache";
 import { DEFAULT_SETTINGS, type LinkLensSettings, parseSettings } from "./config";
 import { badgeExtension, editorLinkAt } from "./editor";
 import type { Badge, Preview } from "./preview";
-import { type ProviderMatch, ProviderSet, type RunContext, runProvider } from "./providers";
+import { type ProviderMatch, ProviderSet, type RunContext, runProvider, writeProviderScripts } from "./providers";
 import { type ActionDraft, createBadge, renderLoading, renderResult } from "./render";
 import { LinkLensSettingTab } from "./settingsTab";
+
+/** The scripts in providers/, by file name. esbuild.config.mjs fills this in at build time. */
+declare const PROVIDER_SCRIPTS: Record<string, string>;
 
 export default class LinkLensPlugin extends Plugin {
 	settings: LinkLensSettings = DEFAULT_SETTINGS;
@@ -20,6 +23,7 @@ export default class LinkLensPlugin extends Plugin {
 
 	async onload() {
 		this.settings = parseSettings(await this.loadData());
+		await writeProviderScripts(this.runContext().pluginDir, PROVIDER_SCRIPTS);
 		this.providers = new ProviderSet(this.settings.providers);
 		this.addSettingTab(new LinkLensSettingTab(this.app, this));
 		this.registerEditorExtension(
