@@ -13,6 +13,8 @@ npm run build    # typecheck and bundle main.js
 npm run dev      # rebuild main.js whenever a file changes
 ```
 
+`npm run dev` reads `providers/` once when it starts, so restart it after editing a provider script before you copy a build into a vault.
+
 ## Try a change in Obsidian
 
 Use a test vault, not the one you work in. Either copy a build into it:

@@ -23,7 +23,10 @@ export default class LinkLensPlugin extends Plugin {
 
 	async onload() {
 		this.settings = parseSettings(await this.loadData());
-		await writeProviderScripts(this.runContext().pluginDir, PROVIDER_SCRIPTS);
+		// A failed write leaves stale or missing scripts, which fail per run; keep the rest of the plugin loading.
+		await writeProviderScripts(this.runContext().pluginDir, PROVIDER_SCRIPTS).catch((error) =>
+			console.warn("Link Lens: could not write provider scripts", error),
+		);
 		this.providers = new ProviderSet(this.settings.providers);
 		this.addSettingTab(new LinkLensSettingTab(this.app, this));
 		this.registerEditorExtension(
